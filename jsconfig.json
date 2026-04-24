@@ -1,0 +1,75 @@
+// config.js — constants, DNA helpers, vector math, steering
+
+const CFG = {
+  INIT_FOOD: 110, INIT_HERB: 60, INIT_PRED: 11,
+  MAX_FOOD: 190,  MAX_HERB: 220, MAX_PRED: 38,
+  FOOD_RATE: 0.4,
+  BASE_FORCE: 0.18,
+  GRID_CELL: 80,
+  REPRO_CD: 5000, REPRO_PROB: 0.08/60,
+  REPRO_THRESH: 0.70, REPRO_COST: 0.35,
+  MUT_CHANCE: 0.10, MUT_SHIFT: 0.10,
+  // Day/night: full cycle length in frames (~30 s day + 30 s night at 60fps)
+  DAY_LEN: 1800,
+  NIGHT_DRAIN: 0.55, // metabolism multiplier at night (slower = better survival)
+};
+
+const DNA_RANGES = {
+  size:       [0.6, 1.6],
+  maxSpeed:   [1.0, 4.5],
+  agility:    [0.6, 1.6],
+  perception: [30, 140],
+  foodWeight: [0.3, 2.0],
+  fearWeight: [0.3, 2.0],
+  huntWeight: [0.3, 2.0],
+};
+
+// ── Vector math ───────────────────────────────────────────────────────────
+function vadd(a,b)     { return {x:a.x+b.x, y:a.y+b.y}; }
+function vscale(v,s)   { return {x:v.x*s,   y:v.y*s}; }
+function vmag(v)       { return Math.sqrt(v.x*v.x+v.y*v.y); }
+function vnorm(v)      { const m=vmag(v)||1; return {x:v.x/m, y:v.y/m}; }
+function vclamp(v,mx)  { const m=vmag(v); return m>mx ? vscale(vnorm(v),mx) : {x:v.x,y:v.y}; }
+function d2(ax,ay,bx,by) { return (ax-bx)**2+(ay-by)**2; }
+function rnd(a,b)      { return a+Math.random()*(b-a); }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+function lerp(a,b,t)   { return a+(b-a)*t; }
+
+// ── Steering ──────────────────────────────────────────────────────────────
+function steerArrival(pos,vel,target,maxSpeed,maxForce,slowR) {
+  const dx=target.x-pos.x, dy=target.y-pos.y, dist=Math.sqrt(dx*dx+dy*dy)||1;
+  const spd = dist<slowR ? maxSpeed*(dist/slowR) : maxSpeed;
+  return {x:clamp(dx/dist*spd-vel.x,-maxForce,maxForce),
+          y:clamp(dy/dist*spd-vel.y,-maxForce,maxForce)};
+}
+function steerFlee(pos,vel,threat,maxSpeed,maxForce) {
+  const dx=pos.x-threat.x, dy=pos.y-threat.y, dist=Math.sqrt(dx*dx+dy*dy)||1;
+  return {x:clamp(dx/dist*maxSpeed-vel.x,-maxForce,maxForce),
+          y:clamp(dy/dist*maxSpeed-vel.y,-maxForce,maxForce)};
+}
+function steerWander(vel,angle,maxForce) {
+  const m=vmag(vel)||1, nx=vel.x/m, ny=vel.y/m;
+  const fx=nx*60+Math.cos(angle)*28, fy=ny*60+Math.sin(angle)*28;
+  const fm=Math.sqrt(fx*fx+fy*fy)||1;
+  return {x:fx/fm*maxForce*1.2, y:fy/fm*maxForce*1.2};
+}
+
+// ── DNA ───────────────────────────────────────────────────────────────────
+function randomDNA() {
+  const dna={};
+  for(const [k,[lo,hi]] of Object.entries(DNA_RANGES)) dna[k]=rnd(lo,hi);
+  return dna;
+}
+function mutateDNA(parent) {
+  const child={};
+  for(const [k,[lo,hi]] of Object.entries(DNA_RANGES)) {
+    let v=parent[k];
+    if(Math.random()<CFG.MUT_CHANCE) v=clamp(v*(1+(Math.random()*2-1)*CFG.MUT_SHIFT),lo,hi);
+    child[k]=v;
+  }
+  return child;
+}
+function avgDNA(agents,key) {
+  if(!agents.length) return null;
+  return agents.reduce((s,a)=>s+a.dna[key],0)/agents.length;
+}
